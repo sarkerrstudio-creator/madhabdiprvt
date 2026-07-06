@@ -1708,7 +1708,7 @@ table{display:block;max-width:100%;overflow-x:auto;}
       <input type="hidden" name="_captcha" value="false">
       <input type="hidden" name="_template" value="table">
       <input type="hidden" name="_autoresponse" value="Thank you for booking your appointment. We will contact you shortly.">
-      <input type="hidden" name="_next" value="https://madhabdicityhospital.com/">
+      <input type="hidden" name="_next" id="bookingNextField" value="thank-you.html">
       <input type="hidden" id="bookingDoctorField" name="Doctor" value="">
 
       <div class="booking-field">
@@ -1841,7 +1841,21 @@ const bookingDoctorField = document.getElementById('bookingDoctorField');
 const bookingSubmitBtn = document.getElementById('bookingSubmitBtn');
 const bookingStatus = document.getElementById('bookingStatus');
 const bookingClose = document.getElementById('bookingClose');
+const bookingNextField = document.getElementById('bookingNextField');
 let currentDoctor = '';
+
+// Point FormSubmit's redirect at the right Thank You page depending on where
+// the site is running: the live domain when hosted online, or the plain
+// relative file when opened locally (e.g. file:// or localhost).
+(function setNextRedirect(){
+  const host = window.location.hostname;
+  const isLive = host === 'madhabdicityhospital.xyz' || host === 'www.madhabdicityhospital.xyz';
+  if (bookingNextField) {
+    bookingNextField.value = isLive
+      ? 'https://madhabdicityhospital.xyz/thank-you.html'
+      : 'thank-you.html';
+  }
+})();
 
 function openBooking(btn){
   const card = btn.closest('.doctor-card');
@@ -1871,9 +1885,7 @@ bookingClose.addEventListener('click', closeBooking);
 bookingOverlay.addEventListener('click', (e) => { if(e.target === bookingOverlay) closeBooking(); });
 document.addEventListener('keydown', (e) => { if(e.key === 'Escape' && bookingOverlay.classList.contains('open')) closeBooking(); });
 
-bookingForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-
+bookingForm.addEventListener('submit', (e) => {
   const name = bookingNameInput.value.trim();
   const phone = bookingPhoneInput.value.trim();
   const department = bookingDepartmentSelect ? bookingDepartmentSelect.value.trim() : '';
@@ -1881,12 +1893,23 @@ bookingForm.addEventListener('submit', async (e) => {
   const time = bookingTimeInput ? bookingTimeInput.value.trim() : '';
   const email = bookingEmailInput ? bookingEmailInput.value.trim() : '';
 
+  // Only ever block submission (preventDefault) for genuine client-side
+  // validation failures. We no longer make a background fetch() call to
+  // FormSubmit's /ajax/ endpoint here: that call frequently reports a
+  // network/CORS error even though the email is delivered successfully
+  // server-side, which was the cause of the false "Could not send
+  // request" message. Once validation passes we let the browser submit
+  // the form normally, so FormSubmit processes the real POST and then
+  // redirects the user to the _next URL (the Thank You page) itself -
+  // no error is shown because we no longer guess at success/failure.
   if(!name || !phone || !department || !date || !time){
+    e.preventDefault();
     bookingStatus.textContent = 'Please fill in all required fields.';
     bookingStatus.className = 'booking-status error';
     return;
   }
   if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+    e.preventDefault();
     bookingStatus.textContent = 'Please enter a valid email address.';
     bookingStatus.className = 'booking-status error';
     return;
@@ -1897,47 +1920,8 @@ bookingForm.addEventListener('submit', async (e) => {
   bookingSubmitBtn.textContent = 'Sending...';
   bookingStatus.textContent = '';
   bookingStatus.className = 'booking-status';
-
-  try{
-    const formData = new FormData(bookingForm);
-
-    // FormSubmit's plain action endpoint (used above for the `action` attribute /
-    // no-JS fallback) does not send CORS headers on its JSON response, so a
-    // fetch() call to it fails in the browser with a CORS/network error even
-    // though the email is actually delivered server-side. FormSubmit's
-    // dedicated /ajax/ endpoint returns the same result but WITH CORS headers,
-    // so we use that for the AJAX submission while leaving the form's
-    // `action` attribute untouched.
-    const ajaxEndpoint = bookingForm.action.replace(
-      'https://formsubmit.co/',
-      'https://formsubmit.co/ajax/'
-    );
-
-    const res = await fetch(ajaxEndpoint, {
-      method: 'POST',
-      headers: { 'Accept': 'application/json' },
-      body: formData
-    });
-
-    let data = null;
-    try { data = await res.json(); } catch(parseErr) { /* ignore, handled below */ }
-
-    const succeeded = res.ok && (!data || data.success === true || data.success === 'true');
-
-    if(succeeded){
-      bookingStatus.textContent = 'Request sent! Our front desk will call you shortly.';
-      bookingStatus.className = 'booking-status success';
-      bookingSubmitBtn.textContent = 'Sent ✓';
-      setTimeout(closeBooking, 2200);
-    } else {
-      throw new Error((data && data.message) || 'Failed to send');
-    }
-  } catch(err){
-    bookingStatus.textContent = 'Could not send request. Please call us instead.';
-    bookingStatus.className = 'booking-status error';
-    bookingSubmitBtn.disabled = false;
-    bookingSubmitBtn.textContent = 'Submit Request';
-  }
+  // No e.preventDefault() here: the form submits for real and FormSubmit
+  // takes over, redirecting to thank-you.html on success.
 });
 </script>
 
