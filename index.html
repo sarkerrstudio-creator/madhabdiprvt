@@ -1900,18 +1900,37 @@ bookingForm.addEventListener('submit', async (e) => {
 
   try{
     const formData = new FormData(bookingForm);
-    const res = await fetch(bookingForm.action, {
+
+    // FormSubmit's plain action endpoint (used above for the `action` attribute /
+    // no-JS fallback) does not send CORS headers on its JSON response, so a
+    // fetch() call to it fails in the browser with a CORS/network error even
+    // though the email is actually delivered server-side. FormSubmit's
+    // dedicated /ajax/ endpoint returns the same result but WITH CORS headers,
+    // so we use that for the AJAX submission while leaving the form's
+    // `action` attribute untouched.
+    const ajaxEndpoint = bookingForm.action.replace(
+      'https://formsubmit.co/',
+      'https://formsubmit.co/ajax/'
+    );
+
+    const res = await fetch(ajaxEndpoint, {
       method: 'POST',
       headers: { 'Accept': 'application/json' },
       body: formData
     });
-    if(res.ok){
+
+    let data = null;
+    try { data = await res.json(); } catch(parseErr) { /* ignore, handled below */ }
+
+    const succeeded = res.ok && (!data || data.success === true || data.success === 'true');
+
+    if(succeeded){
       bookingStatus.textContent = 'Request sent! Our front desk will call you shortly.';
       bookingStatus.className = 'booking-status success';
       bookingSubmitBtn.textContent = 'Sent ✓';
       setTimeout(closeBooking, 2200);
     } else {
-      throw new Error('Failed to send');
+      throw new Error((data && data.message) || 'Failed to send');
     }
   } catch(err){
     bookingStatus.textContent = 'Could not send request. Please call us instead.';
